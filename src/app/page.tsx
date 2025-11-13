@@ -43,10 +43,13 @@ type Screen =
 
 type WorkoutLocation = "home" | "gym" | null;
 
+type DayOfWeek = "monday" | "tuesday" | "wednesday" | "thursday" | "friday";
+
 export default function FitNowApp() {
   const [currentScreen, setCurrentScreen] = useState<Screen>("welcome");
   const [isPremium, setIsPremium] = useState(false);
   const [workoutLocation, setWorkoutLocation] = useState<WorkoutLocation>(null);
+  const [selectedDay, setSelectedDay] = useState<DayOfWeek>("monday");
   const [currentExercise, setCurrentExercise] = useState(0);
   const [completedSets, setCompletedSets] = useState<number[]>([]);
   const [isTimerRunning, setIsTimerRunning] = useState(false);
@@ -72,21 +75,111 @@ export default function FitNowApp() {
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
 
-  // Dados de exemplo para treinos
-  const workouts = {
-    home: [
-      { name: "Flexões", sets: "3x12", video: "💪", muscle: "Peito" },
-      { name: "Agachamento", sets: "3x15", video: "🦵", muscle: "Pernas" },
-      { name: "Prancha", sets: "3x30s", video: "🧘", muscle: "Core" },
-      { name: "Burpees", sets: "3x10", video: "🔥", muscle: "Full Body" },
-    ],
-    gym: [
-      { name: "Supino Reto", sets: "4x10", video: "💪", muscle: "Peito" },
-      { name: "Agachamento Livre", sets: "4x12", video: "🦵", muscle: "Pernas" },
-      { name: "Remada Curvada", sets: "4x10", video: "💪", muscle: "Costas" },
-      { name: "Desenvolvimento", sets: "4x10", video: "💪", muscle: "Ombros" },
-    ],
+  // Dados de treinos divididos por dia da semana
+  const weeklyWorkouts = {
+    home: {
+      monday: {
+        name: "Peito e Tríceps",
+        exercises: [
+          { name: "Flexões", sets: "3x12", video: "💪", muscle: "Peito" },
+          { name: "Flexões Diamante", sets: "3x10", video: "💪", muscle: "Tríceps" },
+          { name: "Mergulho no Banco", sets: "3x12", video: "💪", muscle: "Tríceps" },
+          { name: "Flexões Inclinadas", sets: "3x15", video: "💪", muscle: "Peito" },
+        ]
+      },
+      tuesday: {
+        name: "Pernas",
+        exercises: [
+          { name: "Agachamento", sets: "4x15", video: "🦵", muscle: "Pernas" },
+          { name: "Afundo", sets: "3x12", video: "🦵", muscle: "Pernas" },
+          { name: "Agachamento Búlgaro", sets: "3x10", video: "🦵", muscle: "Pernas" },
+          { name: "Elevação de Panturrilha", sets: "4x20", video: "🦵", muscle: "Panturrilha" },
+        ]
+      },
+      wednesday: {
+        name: "Costas e Bíceps",
+        exercises: [
+          { name: "Remada Australiana", sets: "3x12", video: "💪", muscle: "Costas" },
+          { name: "Superman", sets: "3x15", video: "💪", muscle: "Costas" },
+          { name: "Rosca Concentrada", sets: "3x12", video: "💪", muscle: "Bíceps" },
+          { name: "Rosca Martelo", sets: "3x10", video: "💪", muscle: "Bíceps" },
+        ]
+      },
+      thursday: {
+        name: "Ombros e Core",
+        exercises: [
+          { name: "Elevação Lateral", sets: "3x15", video: "💪", muscle: "Ombros" },
+          { name: "Elevação Frontal", sets: "3x12", video: "💪", muscle: "Ombros" },
+          { name: "Prancha", sets: "3x45s", video: "🧘", muscle: "Core" },
+          { name: "Prancha Lateral", sets: "3x30s", video: "🧘", muscle: "Core" },
+        ]
+      },
+      friday: {
+        name: "Full Body",
+        exercises: [
+          { name: "Burpees", sets: "3x10", video: "🔥", muscle: "Full Body" },
+          { name: "Mountain Climbers", sets: "3x20", video: "🔥", muscle: "Full Body" },
+          { name: "Agachamento com Salto", sets: "3x12", video: "🦵", muscle: "Full Body" },
+          { name: "Prancha Dinâmica", sets: "3x15", video: "🧘", muscle: "Full Body" },
+        ]
+      }
+    },
+    gym: {
+      monday: {
+        name: "Peito e Tríceps",
+        exercises: [
+          { name: "Supino Reto", sets: "4x10", video: "💪", muscle: "Peito" },
+          { name: "Supino Inclinado", sets: "4x10", video: "💪", muscle: "Peito" },
+          { name: "Crucifixo", sets: "3x12", video: "💪", muscle: "Peito" },
+          { name: "Tríceps Testa", sets: "3x12", video: "💪", muscle: "Tríceps" },
+        ]
+      },
+      tuesday: {
+        name: "Pernas",
+        exercises: [
+          { name: "Agachamento Livre", sets: "4x12", video: "🦵", muscle: "Pernas" },
+          { name: "Leg Press", sets: "4x15", video: "🦵", muscle: "Pernas" },
+          { name: "Cadeira Extensora", sets: "3x12", video: "🦵", muscle: "Quadríceps" },
+          { name: "Cadeira Flexora", sets: "3x12", video: "🦵", muscle: "Posterior" },
+        ]
+      },
+      wednesday: {
+        name: "Costas e Bíceps",
+        exercises: [
+          { name: "Barra Fixa", sets: "4x8", video: "💪", muscle: "Costas" },
+          { name: "Remada Curvada", sets: "4x10", video: "💪", muscle: "Costas" },
+          { name: "Puxada Frontal", sets: "3x12", video: "💪", muscle: "Costas" },
+          { name: "Rosca Direta", sets: "3x12", video: "💪", muscle: "Bíceps" },
+        ]
+      },
+      thursday: {
+        name: "Ombros e Trapézio",
+        exercises: [
+          { name: "Desenvolvimento", sets: "4x10", video: "💪", muscle: "Ombros" },
+          { name: "Elevação Lateral", sets: "3x15", video: "💪", muscle: "Ombros" },
+          { name: "Elevação Frontal", sets: "3x12", video: "💪", muscle: "Ombros" },
+          { name: "Encolhimento", sets: "4x15", video: "💪", muscle: "Trapézio" },
+        ]
+      },
+      friday: {
+        name: "Pernas e Glúteos",
+        exercises: [
+          { name: "Stiff", sets: "4x12", video: "🦵", muscle: "Posterior" },
+          { name: "Afundo com Barra", sets: "3x12", video: "🦵", muscle: "Pernas" },
+          { name: "Cadeira Abdutora", sets: "3x15", video: "🦵", muscle: "Glúteos" },
+          { name: "Panturrilha no Smith", sets: "4x20", video: "🦵", muscle: "Panturrilha" },
+        ]
+      }
+    }
   };
+
+  const daysOfWeek = [
+    { id: "monday" as DayOfWeek, label: "Segunda", short: "SEG" },
+    { id: "tuesday" as DayOfWeek, label: "Terça", short: "TER" },
+    { id: "wednesday" as DayOfWeek, label: "Quarta", short: "QUA" },
+    { id: "thursday" as DayOfWeek, label: "Quinta", short: "QUI" },
+    { id: "friday" as DayOfWeek, label: "Sexta", short: "SEX" },
+  ];
 
   const dietPlan = [
     { meal: "Café da Manhã", food: "Ovos mexidos + Aveia + Banana", calories: "450 kcal" },
@@ -183,6 +276,8 @@ export default function FitNowApp() {
 
   // Tela Principal (Home)
   if (currentScreen === "home") {
+    const currentWorkout = workoutLocation ? weeklyWorkouts[workoutLocation][selectedDay] : null;
+
     return (
       <div className="min-h-screen pb-20 bg-black">
         {/* Header */}
@@ -253,10 +348,10 @@ export default function FitNowApp() {
         )}
 
         {/* Treino do Dia */}
-        {workoutLocation && (
+        {workoutLocation && currentWorkout && (
           <div className="p-6 space-y-6">
             <div className="flex items-center justify-between">
-              <h2 className="text-xl font-bold text-white">Treino de Hoje</h2>
+              <h2 className="text-xl font-bold text-white">Treino da Semana</h2>
               <Button 
                 variant="ghost" 
                 size="sm"
@@ -267,13 +362,41 @@ export default function FitNowApp() {
               </Button>
             </div>
 
-            <Card className="p-6 bg-gradient-to-br from-red-600 to-red-800 text-white border-0">
-              <div className="flex items-center justify-between mb-4">
+            {/* Seletor de Dias */}
+            <div className="flex gap-2 overflow-x-auto pb-2">
+              {daysOfWeek.map((day) => (
+                <Button
+                  key={day.id}
+                  onClick={() => setSelectedDay(day.id)}
+                  variant={selectedDay === day.id ? "default" : "outline"}
+                  className={`flex-shrink-0 flex flex-col items-center gap-1 h-auto py-3 px-4 ${
+                    selectedDay === day.id
+                      ? "bg-gradient-to-br from-red-600 to-red-800 text-white border-0"
+                      : "bg-gray-900 border-gray-800 text-gray-400 hover:bg-gray-800 hover:text-white"
+                  }`}
+                >
+                  <span className="text-xs font-medium">{day.short}</span>
+                  <span className="text-xs opacity-80">{day.label}</span>
+                </Button>
+              ))}
+            </div>
+
+            {/* Card do Treino do Dia */}
+            <Card className="flex flex-col gap-6 rounded-xl shadow-sm p-6 bg-gradient-to-br from-red-600 to-red-800 text-white border-0">
+              <div className="flex items-center justify-between">
                 <div>
-                  <h3 className="text-2xl font-bold">
-                    {workoutLocation === "home" ? "Treino em Casa" : "Treino na Academia"}
+                  <div className="flex items-center gap-2 mb-2">
+                    <Calendar className="w-5 h-5" />
+                    <span className="text-sm font-medium opacity-90">
+                      {daysOfWeek.find(d => d.id === selectedDay)?.label}
+                    </span>
+                  </div>
+                  <h3 className="text-2xl font-bold mb-1">
+                    {currentWorkout.name}
                   </h3>
-                  <p className="text-gray-200">4 exercícios • 30-40 min</p>
+                  <p className="text-gray-200">
+                    {currentWorkout.exercises.length} exercícios • 30-40 min
+                  </p>
                 </div>
                 <div className="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center">
                   {workoutLocation === "home" ? (
@@ -291,6 +414,24 @@ export default function FitNowApp() {
                 Iniciar Treino
               </Button>
             </Card>
+
+            {/* Preview dos Exercícios */}
+            <div>
+              <h3 className="font-semibold mb-3 text-white">Exercícios de Hoje</h3>
+              <div className="space-y-2">
+                {currentWorkout.exercises.map((exercise, idx) => (
+                  <Card key={idx} className="p-4 bg-gray-900 border-gray-800">
+                    <div className="flex items-center gap-4">
+                      <div className="text-3xl">{exercise.video}</div>
+                      <div className="flex-1">
+                        <h4 className="font-semibold text-white">{exercise.name}</h4>
+                        <p className="text-sm text-gray-400">{exercise.sets} • {exercise.muscle}</p>
+                      </div>
+                    </div>
+                  </Card>
+                ))}
+              </div>
+            </div>
 
             {/* Dieta do Dia */}
             <div>
@@ -382,8 +523,8 @@ export default function FitNowApp() {
 
   // Tela de Treino
   if (currentScreen === "workout") {
-    const currentWorkout = workoutLocation ? workouts[workoutLocation] : workouts.home;
-    const exercise = currentWorkout[currentExercise];
+    const currentWorkout = workoutLocation ? weeklyWorkouts[workoutLocation][selectedDay] : weeklyWorkouts.home.monday;
+    const exercise = currentWorkout.exercises[currentExercise];
     const totalSets = 3;
     const remainingSets = totalSets - completedSets.length;
 
@@ -400,15 +541,15 @@ export default function FitNowApp() {
           </Button>
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-2xl font-bold">Treino em Andamento</h1>
-              <p className="text-gray-200">Exercício {currentExercise + 1} de {currentWorkout.length}</p>
+              <h1 className="text-2xl font-bold">{currentWorkout.name}</h1>
+              <p className="text-gray-200">Exercício {currentExercise + 1} de {currentWorkout.exercises.length}</p>
             </div>
             <div className="text-right">
-              <div className="text-3xl font-bold">{Math.round((currentExercise / currentWorkout.length) * 100)}%</div>
+              <div className="text-3xl font-bold">{Math.round((currentExercise / currentWorkout.exercises.length) * 100)}%</div>
               <div className="text-sm text-gray-200">Completo</div>
             </div>
           </div>
-          <Progress value={(currentExercise / currentWorkout.length) * 100} className="mt-4 h-2" />
+          <Progress value={(currentExercise / currentWorkout.exercises.length) * 100} className="mt-4 h-2" />
         </div>
 
         {/* Exercício Atual */}
@@ -536,7 +677,7 @@ export default function FitNowApp() {
                     Anterior
                   </Button>
                 )}
-                {currentExercise < currentWorkout.length - 1 ? (
+                {currentExercise < currentWorkout.exercises.length - 1 ? (
                   <Button
                     className="flex-1 bg-gradient-to-r from-red-600 to-red-800 hover:from-red-700 hover:to-red-900"
                     onClick={() => {
@@ -571,7 +712,7 @@ export default function FitNowApp() {
           <div>
             <h3 className="font-semibold mb-3 text-white">Próximos Exercícios</h3>
             <div className="space-y-2">
-              {currentWorkout.map((ex, idx) => (
+              {currentWorkout.exercises.map((ex, idx) => (
                 <Card 
                   key={idx}
                   className={`p-4 ${idx === currentExercise ? "border-2 border-red-600 bg-red-950" : "bg-gray-900 border-gray-800"}`}
