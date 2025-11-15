@@ -98,6 +98,13 @@ export default function FitneerApp() {
     return () => clearInterval(interval);
   }, [isTimerRunning, timerSeconds]);
 
+  // Effect para carregar usuários quando estiver na tela admin
+  useEffect(() => {
+    if (currentScreen === "admin") {
+      loadAllUsers();
+    }
+  }, [currentScreen]);
+
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
@@ -384,10 +391,6 @@ export default function FitneerApp() {
 
   // Painel Admin
   if (currentScreen === "admin") {
-    useEffect(() => {
-      loadAllUsers();
-    }, []);
-
     const filteredUsers = allUsers.filter(user => 
       user.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       user.email.toLowerCase().includes(searchTerm.toLowerCase())
