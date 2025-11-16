@@ -19,49 +19,90 @@ import {
   RefreshCw,
   User,
   LogIn,
-  Pause
+  Pause,
+  Lock,
+  Settings
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Checkbox } from "@/components/ui/checkbox";
+import { signIn, signUp, updateUserPlan, saveUserGoals, getUserGoals, getAllUsers } from "@/lib/auth";
+import { generateWorkoutPlan, generateDietPlan } from "@/lib/workout-generator";
+import { User as UserType } from "@/lib/supabase";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 
 type Screen = 
   | "welcome" 
-  | "login" 
+  | "login"
+  | "signup"
   | "home" 
   | "workout" 
   | "diet" 
   | "progress" 
   | "premium-form"
-  | "premium-upsell";
+  | "premium-upsell"
+  | "profile"
+  | "admin";
 
 type WorkoutLocation = "home" | "gym" | null;
+type DayOfWeek = "monday" | "tuesday" | "wednesday" | "thursday" | "friday";
 
-export default function FitNowApp() {
+export default function FitneerApp() {
+  // TODOS OS ESTADOS DECLARADOS PRIMEIRO
   const [currentScreen, setCurrentScreen] = useState<Screen>("welcome");
-  const [isPremium, setIsPremium] = useState(false);
+  const [currentUser, setCurrentUser] = useState<UserType | null>(null);
   const [workoutLocation, setWorkoutLocation] = useState<WorkoutLocation>(null);
+  const [selectedDay, setSelectedDay] = useState<DayOfWeek>("monday");
   const [currentExercise, setCurrentExercise] = useState(0);
   const [completedSets, setCompletedSets] = useState<number[]>([]);
   const [isTimerRunning, setIsTimerRunning] = useState(false);
-  const [timerSeconds, setTimerSeconds] = useState(90); // 1:30 padrão
+  const [timerSeconds, setTimerSeconds] = useState(90);
+  const [userGoals, setUserGoals] = useState<any>(null);
+  const [workoutPlan, setWorkoutPlan] = useState<any>(null);
+  const [dietPlan, setDietPlan] = useState<any>(null);
 
-  // Timer effect
+  // Form states
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [name, setName] = useState("");
+  const [error, setError] = useState("");
+
+  // Admin states
+  const [allUsers, setAllUsers] = useState<UserType[]>([]);
+  const [searchTerm, setSearchTerm] = useState("");
+
+  const isPremium = currentUser?.plan_type === 'pro';
+
+  // AGORA SIM OS EFFECTS (DEPOIS DE TODOS OS ESTADOS)
+  // Effect para carregar usuários quando estiver na tela admin
+  useEffect(() => {
+    if (currentScreen === "admin") {
+      loadAllUsers();
+    }
+  }, [currentScreen]);
+
+  // Timer effect com som
   useEffect(() => {
     let interval: NodeJS.Timeout;
     if (isTimerRunning && timerSeconds > 0) {
       interval = setInterval(() => {
-        setTimerSeconds((prev) => prev - 1);
+        setTimerSeconds((prev) => {
+          // Som nos últimos 3 segundos
+          if (prev <= 3 && prev > 0) {
+            const audio = new Audio('data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgodDbq2EcBj+a2/LDciUFLIHO8tiJNwgZaLvt559NEAxQp+PwtmMcBjiR1/LMeSwFJHfH8N2QQAoUXrTp66hVFApGn+DyvmwhBSuBzvLZiTYIGWi77eefTRAMUKfj8LZjHAY4ktfyzHksBSR3x/DdkEAKFF606+uoVRQKRp/g8r5sIQUrgs7y2Yk2CBlou+3nn00QDFCn4/C2YxwGOJLX8sx5LAUkd8fw3ZBAC');
+            audio.play().catch(() => {});
+          }
+          return prev - 1;
+        });
       }, 1000);
     } else if (timerSeconds === 0) {
       setIsTimerRunning(false);
-      setTimerSeconds(90); // Reset para 1:30
+      setTimerSeconds(90);
     }
     return () => clearInterval(interval);
   }, [isTimerRunning, timerSeconds]);
@@ -72,29 +113,101 @@ export default function FitNowApp() {
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
 
-  // Dados de exemplo para treinos
-  const workouts = {
-    home: [
-      { name: "Flexões", sets: "3x12", video: "💪", muscle: "Peito" },
-      { name: "Agachamento", sets: "3x15", video: "🦵", muscle: "Pernas" },
-      { name: "Prancha", sets: "3x30s", video: "🧘", muscle: "Core" },
-      { name: "Burpees", sets: "3x10", video: "🔥", muscle: "Full Body" },
-    ],
-    gym: [
-      { name: "Supino Reto", sets: "4x10", video: "💪", muscle: "Peito" },
-      { name: "Agachamento Livre", sets: "4x12", video: "🦵", muscle: "Pernas" },
-      { name: "Remada Curvada", sets: "4x10", video: "💪", muscle: "Costas" },
-      { name: "Desenvolvimento", sets: "4x10", video: "💪", muscle: "Ombros" },
-    ],
+  const daysOfWeek = [
+    { id: "monday" as DayOfWeek, label: "Segunda", short: "SEG" },
+    { id: "tuesday" as DayOfWeek, label: "Terça", short: "TER" },
+    { id: "wednesday" as DayOfWeek, label: "Quarta", short: "QUA" },
+    { id: "thursday" as DayOfWeek, label: "Quinta", short: "QUI" },
+    { id: "friday" as DayOfWeek, label: "Sexta", short: "SEX" },
+  ];
+
+  const handleLogin = async () => {
+    setError("");
+    
+    // Verificar se é admin
+    if (email === "admin@gmail.com" && password === "V8wF9Df9RtI") {
+      setCurrentUser({
+        id: "admin",
+        email: "admin@gmail.com",
+        name: "Administrador",
+        plan_type: "pro",
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      });
+      setCurrentScreen("admin");
+      return;
+    }
+
+    const { user, error: loginError } = await signIn(email, password);
+    
+    if (loginError) {
+      setError(loginError);
+      return;
+    }
+
+    setCurrentUser(user);
+    
+    // Carregar objetivos do usuário
+    if (user) {
+      const { goals } = await getUserGoals(user.id);
+      if (goals) {
+        setUserGoals(goals);
+        // Gerar planos personalizados
+        const workout = generateWorkoutPlan(goals, goals.workout_location[0] as 'home' | 'gym');
+        const diet = generateDietPlan(goals);
+        setWorkoutPlan(workout);
+        setDietPlan(diet);
+      }
+    }
+    
+    setCurrentScreen("home");
   };
 
-  const dietPlan = [
-    { meal: "Café da Manhã", food: "Ovos mexidos + Aveia + Banana", calories: "450 kcal" },
-    { meal: "Lanche", food: "Iogurte grego + Granola", calories: "200 kcal" },
-    { meal: "Almoço", food: "Frango grelhado + Arroz + Brócolis", calories: "600 kcal" },
-    { meal: "Lanche", food: "Pasta de amendoim + Maçã", calories: "250 kcal" },
-    { meal: "Jantar", food: "Salmão + Batata doce + Salada", calories: "550 kcal" },
-  ];
+  const handleSignup = async () => {
+    setError("");
+    const { user, error: signupError } = await signUp(email, password, name);
+    
+    if (signupError) {
+      setError(signupError);
+      return;
+    }
+
+    setCurrentUser(user);
+    setCurrentScreen("home");
+  };
+
+  const handleSaveGoals = async (goals: any) => {
+    if (!currentUser) return;
+    
+    await saveUserGoals(currentUser.id, goals);
+    setUserGoals(goals);
+    
+    // Gerar planos personalizados
+    const workout = generateWorkoutPlan(goals, goals.workout_location[0] as 'home' | 'gym');
+    const diet = generateDietPlan(goals);
+    setWorkoutPlan(workout);
+    setDietPlan(diet);
+    
+    setCurrentScreen("home");
+  };
+
+  const handleUpgradeToPro = async () => {
+    if (!currentUser) return;
+    
+    await updateUserPlan(currentUser.id, 'pro');
+    setCurrentUser({ ...currentUser, plan_type: 'pro' });
+    setCurrentScreen("premium-form");
+  };
+
+  const loadAllUsers = async () => {
+    const { users } = await getAllUsers();
+    setAllUsers(users);
+  };
+
+  const handleUpdateUserPlan = async (userId: string, newPlan: 'normal' | 'pro') => {
+    await updateUserPlan(userId, newPlan);
+    loadAllUsers();
+  };
 
   // Tela de Boas-vindas
   if (currentScreen === "welcome") {
@@ -103,9 +216,9 @@ export default function FitNowApp() {
         <div className="text-center space-y-8 max-w-md">
           <div className="space-y-4">
             <div className="w-24 h-24 mx-auto bg-red-600 rounded-3xl flex items-center justify-center shadow-2xl">
-              <Zap className="w-14 h-14 text-white" />
+              <Dumbbell className="w-14 h-14 text-white" />
             </div>
-            <h1 className="text-5xl font-bold text-white">FitNow</h1>
+            <h1 className="text-5xl font-bold text-white">Fitneer</h1>
             <p className="text-xl text-gray-300">
               Transforme seu corpo com treinos e dietas personalizadas
             </p>
@@ -120,11 +233,11 @@ export default function FitNowApp() {
               Entrar
             </Button>
             <Button 
-              onClick={() => setCurrentScreen("home")}
+              onClick={() => setCurrentScreen("signup")}
               variant="outline"
               className="w-full h-14 text-lg bg-white/10 text-white border-white/30 hover:bg-white/20 backdrop-blur-sm"
             >
-              Continuar sem login
+              Criar Conta Gratuita
             </Button>
           </div>
 
@@ -137,43 +250,68 @@ export default function FitNowApp() {
     );
   }
 
-  // Tela de Login Simples
+  // Tela de Login
   if (currentScreen === "login") {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center p-6 bg-gradient-to-br from-gray-950 to-black">
         <Card className="w-full max-w-md p-8 space-y-6 bg-gray-900 border-gray-800">
           <div className="text-center space-y-2">
             <div className="w-16 h-16 mx-auto bg-gradient-to-br from-red-600 to-red-800 rounded-2xl flex items-center justify-center">
-              <Zap className="w-8 h-8 text-white" />
+              <Dumbbell className="w-8 h-8 text-white" />
             </div>
             <h2 className="text-2xl font-bold text-white">Bem-vindo de volta!</h2>
             <p className="text-gray-400">Entre para continuar seu progresso</p>
           </div>
 
+          {error && (
+            <div className="p-3 bg-red-500/10 border border-red-500/50 rounded-lg text-red-500 text-sm">
+              {error}
+            </div>
+          )}
+
           <div className="space-y-4">
             <div className="space-y-2">
               <Label className="text-gray-300">Email</Label>
-              <Input type="email" placeholder="seu@email.com" className="bg-gray-800 border-gray-700 text-white" />
+              <Input 
+                type="email" 
+                placeholder="seu@email.com" 
+                className="bg-gray-800 border-gray-700 text-white"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+              />
             </div>
             <div className="space-y-2">
               <Label className="text-gray-300">Senha</Label>
-              <Input type="password" placeholder="••••••••" className="bg-gray-800 border-gray-700 text-white" />
+              <Input 
+                type="password" 
+                placeholder="••••••••" 
+                className="bg-gray-800 border-gray-700 text-white"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+              />
             </div>
           </div>
 
           <div className="space-y-3">
             <Button 
-              onClick={() => setCurrentScreen("home")}
+              onClick={handleLogin}
               className="w-full h-12 bg-gradient-to-r from-red-600 to-red-800 hover:from-red-700 hover:to-red-900"
             >
               Entrar
             </Button>
             <Button 
-              onClick={() => setCurrentScreen("home")}
+              onClick={() => setCurrentScreen("signup")}
               variant="ghost"
               className="w-full text-gray-400 hover:text-white"
             >
               Criar conta gratuita
+            </Button>
+            <Button 
+              onClick={() => setCurrentScreen("welcome")}
+              variant="ghost"
+              className="w-full text-gray-400 hover:text-white"
+            >
+              Voltar
             </Button>
           </div>
         </Card>
@@ -181,194 +319,318 @@ export default function FitNowApp() {
     );
   }
 
-  // Tela Principal (Home)
-  if (currentScreen === "home") {
+  // Tela de Cadastro
+  if (currentScreen === "signup") {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center p-6 bg-gradient-to-br from-gray-950 to-black">
+        <Card className="w-full max-w-md p-8 space-y-6 bg-gray-900 border-gray-800">
+          <div className="text-center space-y-2">
+            <div className="w-16 h-16 mx-auto bg-gradient-to-br from-red-600 to-red-800 rounded-2xl flex items-center justify-center">
+              <Dumbbell className="w-8 h-8 text-white" />
+            </div>
+            <h2 className="text-2xl font-bold text-white">Criar Conta</h2>
+            <p className="text-gray-400">Comece sua jornada fitness</p>
+          </div>
+
+          {error && (
+            <div className="p-3 bg-red-500/10 border border-red-500/50 rounded-lg text-red-500 text-sm">
+              {error}
+            </div>
+          )}
+
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label className="text-gray-300">Nome</Label>
+              <Input 
+                type="text" 
+                placeholder="Seu nome" 
+                className="bg-gray-800 border-gray-700 text-white"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-gray-300">Email</Label>
+              <Input 
+                type="email" 
+                placeholder="seu@email.com" 
+                className="bg-gray-800 border-gray-700 text-white"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-gray-300">Senha</Label>
+              <Input 
+                type="password" 
+                placeholder="••••••••" 
+                className="bg-gray-800 border-gray-700 text-white"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+              />
+            </div>
+          </div>
+
+          <div className="space-y-3">
+            <Button 
+              onClick={handleSignup}
+              className="w-full h-12 bg-gradient-to-r from-red-600 to-red-800 hover:from-red-700 hover:to-red-900"
+            >
+              Criar Conta
+            </Button>
+            <Button 
+              onClick={() => setCurrentScreen("login")}
+              variant="ghost"
+              className="w-full text-gray-400 hover:text-white"
+            >
+              Já tenho conta
+            </Button>
+          </div>
+        </Card>
+      </div>
+    );
+  }
+
+  // Painel Admin
+  if (currentScreen === "admin") {
+    const filteredUsers = allUsers.filter(user => 
+      user.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      user.email.toLowerCase().includes(searchTerm.toLowerCase())
+    );
+
     return (
       <div className="min-h-screen pb-20 bg-black">
-        {/* Header */}
-        <div className="bg-gradient-to-r from-red-600 to-red-800 text-white p-6 pb-8">
-          <div className="flex items-center justify-between mb-6">
+        <div className="bg-gradient-to-r from-red-600 to-red-800 text-white p-6">
+          <div className="flex items-center justify-between mb-4">
             <div>
-              <h1 className="text-2xl font-bold">Olá, Atleta! 👋</h1>
-              <p className="text-gray-200 text-sm">Pronto para treinar hoje?</p>
+              <h1 className="text-2xl font-bold">Painel Administrativo</h1>
+              <p className="text-gray-200 text-sm">Gerenciar usuários e planos</p>
             </div>
             <Button
-              onClick={() => setCurrentScreen("premium-upsell")}
-              className="bg-red-500 text-white hover:bg-red-400"
+              onClick={() => {
+                setCurrentUser(null);
+                setCurrentScreen("welcome");
+              }}
+              variant="ghost"
+              className="text-white"
             >
-              <Crown className="w-4 h-4 mr-2" />
-              Premium
+              Sair
             </Button>
           </div>
 
-          {/* Streak */}
-          <Card className="bg-white/10 backdrop-blur-sm border-white/20 p-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="w-12 h-12 bg-white/20 rounded-full flex items-center justify-center">
-                  <Award className="w-6 h-6 text-white" />
-                </div>
-                <div>
-                  <p className="text-white font-semibold">Sequência de 7 dias</p>
-                  <p className="text-gray-200 text-sm">Continue assim!</p>
-                </div>
-              </div>
-              <ChevronRight className="w-5 h-5 text-white" />
-            </div>
-          </Card>
+          <Input
+            type="text"
+            placeholder="Buscar por nome ou email..."
+            className="bg-white/10 border-white/20 text-white placeholder:text-gray-300"
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+          />
         </div>
 
-        {/* Escolha de Local */}
-        {!workoutLocation && (
-          <div className="p-6 space-y-4">
-            <h2 className="text-xl font-bold text-white">Onde vai treinar hoje?</h2>
-            <div className="grid grid-cols-2 gap-4">
-              <Card 
-                onClick={() => setWorkoutLocation("home")}
-                className="p-6 text-center space-y-3 cursor-pointer hover:shadow-lg transition-shadow border-2 hover:border-red-600 bg-gray-900"
-              >
-                <div className="w-16 h-16 mx-auto bg-gradient-to-br from-red-600 to-red-800 rounded-2xl flex items-center justify-center">
-                  <Home className="w-8 h-8 text-white" />
-                </div>
-                <div>
-                  <h3 className="font-semibold text-white">Em Casa</h3>
-                  <p className="text-sm text-gray-400">Treino funcional</p>
-                </div>
-              </Card>
-
-              <Card 
-                onClick={() => setWorkoutLocation("gym")}
-                className="p-6 text-center space-y-3 cursor-pointer hover:shadow-lg transition-shadow border-2 hover:border-red-600 bg-gray-900"
-              >
-                <div className="w-16 h-16 mx-auto bg-gradient-to-br from-red-600 to-red-800 rounded-2xl flex items-center justify-center">
-                  <Dumbbell className="w-8 h-8 text-white" />
-                </div>
-                <div>
-                  <h3 className="font-semibold text-white">Na Academia</h3>
-                  <p className="text-sm text-gray-400">Treino completo</p>
-                </div>
-              </Card>
-            </div>
+        <div className="p-6 space-y-4">
+          <div className="text-white mb-4">
+            <p className="text-sm text-gray-400">Total de usuários: {allUsers.length}</p>
           </div>
-        )}
 
-        {/* Treino do Dia */}
-        {workoutLocation && (
-          <div className="p-6 space-y-6">
-            <div className="flex items-center justify-between">
-              <h2 className="text-xl font-bold text-white">Treino de Hoje</h2>
-              <Button 
-                variant="ghost" 
-                size="sm"
-                onClick={() => setWorkoutLocation(null)}
-                className="text-gray-400 hover:text-white"
-              >
-                Trocar local
-              </Button>
-            </div>
-
-            <Card className="p-6 bg-gradient-to-br from-red-600 to-red-800 text-white border-0">
-              <div className="flex items-center justify-between mb-4">
+          {filteredUsers.map((user) => (
+            <Card key={user.id} className="p-4 bg-gray-900 border-gray-800">
+              <div className="space-y-3">
                 <div>
-                  <h3 className="text-2xl font-bold">
-                    {workoutLocation === "home" ? "Treino em Casa" : "Treino na Academia"}
-                  </h3>
-                  <p className="text-gray-200">4 exercícios • 30-40 min</p>
+                  <h3 className="font-semibold text-white">{user.name}</h3>
+                  <p className="text-sm text-gray-400">{user.email}</p>
                 </div>
-                <div className="w-16 h-16 bg-white/20 rounded-full flex items-center justify-center">
-                  {workoutLocation === "home" ? (
-                    <Home className="w-8 h-8" />
-                  ) : (
-                    <Dumbbell className="w-8 h-8" />
-                  )}
+                
+                <div className="flex items-center gap-3">
+                  <Label className="text-gray-300 text-sm">Plano:</Label>
+                  <Select
+                    value={user.plan_type}
+                    onValueChange={(value) => handleUpdateUserPlan(user.id, value as 'normal' | 'pro')}
+                  >
+                    <SelectTrigger className="w-32 bg-gray-800 border-gray-700 text-white">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="normal">Normal</SelectItem>
+                      <SelectItem value="pro">Pro</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  
+                  <Badge className={user.plan_type === 'pro' ? 'bg-red-600' : 'bg-gray-600'}>
+                    {user.plan_type === 'pro' ? 'PRO' : 'GRATUITO'}
+                  </Badge>
                 </div>
               </div>
-              <Button 
-                onClick={() => setCurrentScreen("workout")}
-                className="w-full bg-white text-red-600 hover:bg-gray-100"
-              >
-                <Play className="w-5 h-5 mr-2" />
-                Iniciar Treino
-              </Button>
             </Card>
+          ))}
 
-            {/* Dieta do Dia */}
+          {filteredUsers.length === 0 && (
+            <div className="text-center py-12 text-gray-400">
+              Nenhum usuário encontrado
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  // Tela de Perfil
+  if (currentScreen === "profile") {
+    return (
+      <div className="min-h-screen pb-20 bg-black">
+        <div className="bg-gradient-to-r from-red-600 to-red-800 text-white p-6">
+          <Button 
+            variant="ghost" 
+            className="text-white mb-4"
+            onClick={() => setCurrentScreen("home")}
+          >
+            ← Voltar
+          </Button>
+          <div className="text-center space-y-4">
+            <div className="w-20 h-20 mx-auto bg-white/20 rounded-full flex items-center justify-center">
+              <User className="w-10 h-10" />
+            </div>
             <div>
-              <h2 className="text-xl font-bold mb-4 text-white">Dieta de Hoje</h2>
-              <Card className="p-6 bg-gradient-to-br from-gray-900 to-black text-white border-red-900">
-                <div className="flex items-center justify-between mb-4">
-                  <div>
-                    <h3 className="text-2xl font-bold">Plano Alimentar</h3>
-                    <p className="text-gray-400">2.050 kcal • 5 refeições</p>
-                  </div>
-                  <div className="w-16 h-16 bg-red-600/20 rounded-full flex items-center justify-center">
-                    <Apple className="w-8 h-8 text-red-500" />
-                  </div>
+              <h1 className="text-2xl font-bold">{currentUser?.name || "Usuário"}</h1>
+              <p className="text-gray-200">{currentUser?.email}</p>
+            </div>
+            <Badge className={isPremium ? 'bg-yellow-500 text-black' : 'bg-gray-600'}>
+              {isPremium ? '👑 PLANO PRO' : 'PLANO GRATUITO'}
+            </Badge>
+          </div>
+        </div>
+
+        <div className="p-6 space-y-4">
+          {!isPremium && (
+            <Card className="p-6 bg-gradient-to-r from-red-600 to-red-800 border-0">
+              <div className="flex items-start gap-4">
+                <Crown className="w-8 h-8 text-white flex-shrink-0" />
+                <div className="flex-1">
+                  <h3 className="font-bold text-white mb-1">
+                    Upgrade para Pro
+                  </h3>
+                  <p className="text-gray-200 text-sm mb-3">
+                    Desbloqueie treinos e dietas personalizados
+                  </p>
+                  <Button 
+                    onClick={() => setCurrentScreen("premium-upsell")}
+                    className="bg-white text-red-600 hover:bg-gray-100"
+                  >
+                    Ver Planos
+                  </Button>
                 </div>
-                <Button 
-                  onClick={() => setCurrentScreen("diet")}
-                  className="w-full bg-red-600 text-white hover:bg-red-700"
-                >
-                  Ver Dieta Completa
-                </Button>
+              </div>
+            </Card>
+          )}
+
+          {isPremium && userGoals && (
+            <Button
+              onClick={() => setCurrentScreen("premium-form")}
+              className="w-full h-12 bg-gray-900 border border-gray-800 text-white hover:bg-gray-800"
+            >
+              <Settings className="w-5 h-5 mr-2" />
+              Atualizar Objetivos
+            </Button>
+          )}
+
+          <Button
+            onClick={() => {
+              setCurrentUser(null);
+              setUserGoals(null);
+              setWorkoutPlan(null);
+              setDietPlan(null);
+              setCurrentScreen("welcome");
+            }}
+            variant="outline"
+            className="w-full h-12 bg-gray-900 border-gray-800 text-white hover:bg-gray-800"
+          >
+            Sair da Conta
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  // Tela Home
+  if (currentScreen === "home") {
+    return (
+      <div className="min-h-screen pb-20 bg-black">
+        <div className="bg-gradient-to-r from-red-600 to-red-800 text-white p-6">
+          <div className="flex items-center justify-between">
+            <div>
+              <h1 className="text-2xl font-bold">Olá, {currentUser?.name}!</h1>
+              <p className="text-gray-200 text-sm">Pronto para treinar?</p>
+            </div>
+            <Button
+              onClick={() => setCurrentScreen("profile")}
+              variant="ghost"
+              className="text-white"
+            >
+              <User className="w-6 h-6" />
+            </Button>
+          </div>
+        </div>
+
+        <div className="p-6 space-y-6">
+          {!isPremium ? (
+            <Card className="p-6 bg-gradient-to-r from-red-600 to-red-800 border-0">
+              <div className="flex items-start gap-4">
+                <Crown className="w-8 h-8 text-white flex-shrink-0" />
+                <div className="flex-1">
+                  <h3 className="font-bold text-white mb-1">Upgrade para Pro</h3>
+                  <p className="text-gray-200 text-sm mb-3">
+                    Desbloqueie treinos e dietas personalizados
+                  </p>
+                  <Button 
+                    onClick={() => setCurrentScreen("premium-upsell")}
+                    className="bg-white text-red-600 hover:bg-gray-100"
+                  >
+                    Ver Planos
+                  </Button>
+                </div>
+              </div>
+            </Card>
+          ) : (
+            <div className="grid grid-cols-2 gap-4">
+              <Card className="p-6 bg-gray-900 border-gray-800 text-center">
+                <Dumbbell className="w-8 h-8 text-red-600 mx-auto mb-2" />
+                <h3 className="text-white font-semibold">Treinos</h3>
+                <p className="text-gray-400 text-sm">Personalizados</p>
+              </Card>
+              <Card className="p-6 bg-gray-900 border-gray-800 text-center">
+                <Apple className="w-8 h-8 text-red-600 mx-auto mb-2" />
+                <h3 className="text-white font-semibold">Dieta</h3>
+                <p className="text-gray-400 text-sm">Balanceada</p>
               </Card>
             </div>
-
-            {/* Banner Premium */}
-            {!isPremium && (
-              <Card className="p-6 bg-gradient-to-r from-red-600 to-red-800 border-0">
-                <div className="flex items-start gap-4">
-                  <Crown className="w-8 h-8 text-white flex-shrink-0" />
-                  <div className="flex-1">
-                    <h3 className="font-bold text-white mb-1">
-                      Desbloqueie seu potencial máximo
-                    </h3>
-                    <p className="text-gray-200 text-sm mb-3">
-                      Treinos e dietas 100% personalizados para você
-                    </p>
-                    <Button 
-                      onClick={() => setCurrentScreen("premium-upsell")}
-                      className="bg-white text-red-600 hover:bg-gray-100"
-                    >
-                      Conhecer Premium
-                    </Button>
-                  </div>
-                </div>
-              </Card>
-            )}
-          </div>
-        )}
+          )}
+        </div>
 
         {/* Bottom Navigation */}
-        <div className="fixed bottom-0 left-0 right-0 bg-gray-900 border-t border-gray-800 px-6 py-4">
-          <div className="flex items-center justify-around max-w-md mx-auto">
-            <Button 
-              variant="ghost" 
-              className="flex-col h-auto py-2 text-red-600"
-              onClick={() => setCurrentScreen("home")}
-            >
+        <div className="fixed bottom-0 left-0 right-0 bg-gray-900 border-t border-gray-800 p-4">
+          <div className="flex justify-around">
+            <Button variant="ghost" className="flex-col h-auto text-red-600">
               <Home className="w-6 h-6 mb-1" />
               <span className="text-xs">Início</span>
             </Button>
             <Button 
               variant="ghost" 
-              className="flex-col h-auto py-2 text-gray-400 hover:text-white"
-              onClick={() => setCurrentScreen("workout")}
+              className="flex-col h-auto text-gray-400"
+              onClick={() => isPremium ? setCurrentScreen("workout") : setCurrentScreen("premium-upsell")}
             >
               <Dumbbell className="w-6 h-6 mb-1" />
               <span className="text-xs">Treino</span>
             </Button>
             <Button 
               variant="ghost" 
-              className="flex-col h-auto py-2 text-gray-400 hover:text-white"
-              onClick={() => setCurrentScreen("diet")}
+              className="flex-col h-auto text-gray-400"
+              onClick={() => isPremium ? setCurrentScreen("diet") : setCurrentScreen("premium-upsell")}
             >
               <Apple className="w-6 h-6 mb-1" />
               <span className="text-xs">Dieta</span>
             </Button>
             <Button 
               variant="ghost" 
-              className="flex-col h-auto py-2 text-gray-400 hover:text-white"
+              className="flex-col h-auto text-gray-400"
               onClick={() => setCurrentScreen("progress")}
             >
               <TrendingUp className="w-6 h-6 mb-1" />
@@ -382,14 +644,13 @@ export default function FitNowApp() {
 
   // Tela de Treino
   if (currentScreen === "workout") {
-    const currentWorkout = workoutLocation ? workouts[workoutLocation] : workouts.home;
-    const exercise = currentWorkout[currentExercise];
-    const totalSets = 3;
-    const remainingSets = totalSets - completedSets.length;
+    if (!isPremium) {
+      setCurrentScreen("premium-upsell");
+      return null;
+    }
 
     return (
       <div className="min-h-screen pb-20 bg-black">
-        {/* Header */}
         <div className="bg-gradient-to-r from-red-600 to-red-800 text-white p-6">
           <Button 
             variant="ghost" 
@@ -398,197 +659,82 @@ export default function FitNowApp() {
           >
             ← Voltar
           </Button>
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-2xl font-bold">Treino em Andamento</h1>
-              <p className="text-gray-200">Exercício {currentExercise + 1} de {currentWorkout.length}</p>
-            </div>
-            <div className="text-right">
-              <div className="text-3xl font-bold">{Math.round((currentExercise / currentWorkout.length) * 100)}%</div>
-              <div className="text-sm text-gray-200">Completo</div>
-            </div>
-          </div>
-          <Progress value={(currentExercise / currentWorkout.length) * 100} className="mt-4 h-2" />
+          <h1 className="text-2xl font-bold">Meus Treinos</h1>
+          <p className="text-gray-200 text-sm">Plano personalizado para você</p>
         </div>
 
-        {/* Exercício Atual */}
         <div className="p-6 space-y-6">
-          <Card className="overflow-hidden bg-gray-900 border-gray-800">
-            {/* Vídeo/GIF Placeholder */}
-            <div className="bg-gradient-to-br from-gray-950 to-black h-64 flex items-center justify-center text-white">
-              <div className="text-center">
-                <div className="text-8xl mb-4">{exercise.video}</div>
-                <div className="text-sm bg-red-600/20 px-4 py-2 rounded-full inline-block">
-                  Vídeo demonstrativo
-                </div>
-              </div>
+          <div className="flex gap-2 overflow-x-auto pb-2">
+            {daysOfWeek.map((day) => (
+              <Button
+                key={day.id}
+                onClick={() => setSelectedDay(day.id)}
+                variant={selectedDay === day.id ? "default" : "outline"}
+                className={`flex-shrink-0 ${
+                  selectedDay === day.id
+                    ? "bg-red-600 text-white"
+                    : "bg-gray-900 text-gray-400 border-gray-800"
+                }`}
+              >
+                {day.short}
+              </Button>
+            ))}
+          </div>
+
+          <Card className="p-6 bg-gray-900 border-gray-800">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-white font-bold text-lg">Treino de Hoje</h3>
+              <Badge className="bg-red-600">5 exercícios</Badge>
             </div>
-
-            <div className="p-6 space-y-4">
-              <div>
-                <Badge className="mb-2 bg-red-600">{exercise.muscle}</Badge>
-                <h2 className="text-2xl font-bold text-white">{exercise.name}</h2>
-                <p className="text-3xl font-bold text-red-600 mt-2">{exercise.sets}</p>
-              </div>
-
-              {/* Timer e Controle */}
-              <div className="space-y-2">
-                <Card className="p-4 bg-gray-800 border-gray-700">
-                  <div className="flex items-center justify-between mb-3">
-                    <div className="flex items-center gap-2">
-                      <Timer className="w-5 h-5 text-red-600" />
-                      <span className="font-semibold text-white">Cronômetro de Descanso</span>
-                    </div>
-                    <span className="text-2xl font-bold text-white">{formatTime(timerSeconds)}</span>
+            
+            <div className="space-y-4">
+              {[1, 2, 3, 4, 5].map((exercise) => (
+                <div key={exercise} className="flex items-center gap-4 p-4 bg-gray-800 rounded-lg">
+                  <div className="w-12 h-12 bg-red-600 rounded-lg flex items-center justify-center flex-shrink-0">
+                    <Dumbbell className="w-6 h-6 text-white" />
                   </div>
-                  <Button
-                    onClick={() => {
-                      if (isTimerRunning) {
-                        setIsTimerRunning(false);
-                      } else {
-                        setIsTimerRunning(true);
-                      }
-                    }}
-                    className={`w-full h-12 ${
-                      isTimerRunning 
-                        ? "bg-gray-700 hover:bg-gray-600 text-white" 
-                        : "bg-gradient-to-r from-red-600 to-red-800 hover:from-red-700 hover:to-red-900 text-white"
-                    }`}
-                  >
-                    {isTimerRunning ? (
-                      <>
-                        <Pause className="w-5 h-5 mr-2" />
-                        Pausar
-                      </>
-                    ) : (
-                      <>
-                        <Play className="w-5 h-5 mr-2" />
-                        Iniciar Cronômetro
-                      </>
-                    )}
-                  </Button>
-                </Card>
-
-                {/* Indicador de Séries Restantes */}
-                <Card className="p-4 bg-gradient-to-r from-red-950 to-black border-red-900">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm text-gray-400 mb-1">Séries Restantes</p>
-                      <p className="text-3xl font-bold text-white">{remainingSets}</p>
-                    </div>
-                    <div className="flex gap-2">
-                      {[1, 2, 3].map((set) => (
-                        <div
-                          key={set}
-                          className={`w-3 h-3 rounded-full ${
-                            completedSets.includes(set) 
-                              ? "bg-red-600" 
-                              : "bg-gray-700"
-                          }`}
-                        />
-                      ))}
-                    </div>
+                  <div className="flex-1">
+                    <h4 className="text-white font-semibold">Exercício {exercise}</h4>
+                    <p className="text-gray-400 text-sm">3 séries × 12 repetições</p>
                   </div>
-                </Card>
-              </div>
-
-              {/* Controle de Séries */}
-              <div className="space-y-2">
-                <Label className="text-sm font-semibold text-gray-300">Marcar Série Completa</Label>
-                <div className="flex gap-2">
-                  {[1, 2, 3].map((set) => (
-                    <Button
-                      key={set}
-                      variant={completedSets.includes(set) ? "default" : "outline"}
-                      className={`flex-1 h-12 ${
-                        completedSets.includes(set) 
-                          ? "bg-red-600 hover:bg-red-700 text-white" 
-                          : "bg-gray-800 border-gray-700 text-gray-300 hover:bg-gray-700"
-                      }`}
-                      onClick={() => {
-                        if (completedSets.includes(set)) {
-                          setCompletedSets(completedSets.filter(s => s !== set));
-                        } else {
-                          setCompletedSets([...completedSets, set]);
-                        }
-                      }}
-                    >
-                      {completedSets.includes(set) && <Check className="w-5 h-5 mr-2" />}
-                      Série {set}
-                    </Button>
-                  ))}
+                  <ChevronRight className="w-5 h-5 text-gray-400" />
                 </div>
-              </div>
-
-              {/* Botões de Navegação */}
-              <div className="flex gap-3 pt-4">
-                {currentExercise > 0 && (
-                  <Button
-                    variant="outline"
-                    className="flex-1 bg-gray-800 border-gray-700 text-white hover:bg-gray-700"
-                    onClick={() => {
-                      setCurrentExercise(currentExercise - 1);
-                      setCompletedSets([]);
-                      setIsTimerRunning(false);
-                      setTimerSeconds(90);
-                    }}
-                  >
-                    Anterior
-                  </Button>
-                )}
-                {currentExercise < currentWorkout.length - 1 ? (
-                  <Button
-                    className="flex-1 bg-gradient-to-r from-red-600 to-red-800 hover:from-red-700 hover:to-red-900"
-                    onClick={() => {
-                      setCurrentExercise(currentExercise + 1);
-                      setCompletedSets([]);
-                      setIsTimerRunning(false);
-                      setTimerSeconds(90);
-                    }}
-                  >
-                    Próximo Exercício
-                  </Button>
-                ) : (
-                  <Button
-                    className="flex-1 bg-gradient-to-r from-red-600 to-red-800 hover:from-red-700 hover:to-red-900"
-                    onClick={() => {
-                      setCurrentScreen("home");
-                      setCurrentExercise(0);
-                      setCompletedSets([]);
-                      setIsTimerRunning(false);
-                      setTimerSeconds(90);
-                    }}
-                  >
-                    <Check className="w-5 h-5 mr-2" />
-                    Finalizar Treino
-                  </Button>
-                )}
-              </div>
-            </div>
-          </Card>
-
-          {/* Lista de Exercícios */}
-          <div>
-            <h3 className="font-semibold mb-3 text-white">Próximos Exercícios</h3>
-            <div className="space-y-2">
-              {currentWorkout.map((ex, idx) => (
-                <Card 
-                  key={idx}
-                  className={`p-4 ${idx === currentExercise ? "border-2 border-red-600 bg-red-950" : "bg-gray-900 border-gray-800"}`}
-                >
-                  <div className="flex items-center gap-4">
-                    <div className="text-3xl">{ex.video}</div>
-                    <div className="flex-1">
-                      <h4 className="font-semibold text-white">{ex.name}</h4>
-                      <p className="text-sm text-gray-400">{ex.sets}</p>
-                    </div>
-                    {idx < currentExercise && (
-                      <Check className="w-5 h-5 text-red-600" />
-                    )}
-                  </div>
-                </Card>
               ))}
             </div>
+          </Card>
+        </div>
+
+        {/* Bottom Navigation */}
+        <div className="fixed bottom-0 left-0 right-0 bg-gray-900 border-t border-gray-800 p-4">
+          <div className="flex justify-around">
+            <Button 
+              variant="ghost" 
+              className="flex-col h-auto text-gray-400"
+              onClick={() => setCurrentScreen("home")}
+            >
+              <Home className="w-6 h-6 mb-1" />
+              <span className="text-xs">Início</span>
+            </Button>
+            <Button variant="ghost" className="flex-col h-auto text-red-600">
+              <Dumbbell className="w-6 h-6 mb-1" />
+              <span className="text-xs">Treino</span>
+            </Button>
+            <Button 
+              variant="ghost" 
+              className="flex-col h-auto text-gray-400"
+              onClick={() => setCurrentScreen("diet")}
+            >
+              <Apple className="w-6 h-6 mb-1" />
+              <span className="text-xs">Dieta</span>
+            </Button>
+            <Button 
+              variant="ghost" 
+              className="flex-col h-auto text-gray-400"
+              onClick={() => setCurrentScreen("progress")}
+            >
+              <TrendingUp className="w-6 h-6 mb-1" />
+              <span className="text-xs">Progresso</span>
+            </Button>
           </div>
         </div>
       </div>
@@ -597,9 +743,13 @@ export default function FitNowApp() {
 
   // Tela de Dieta
   if (currentScreen === "diet") {
+    if (!isPremium) {
+      setCurrentScreen("premium-upsell");
+      return null;
+    }
+
     return (
       <div className="min-h-screen pb-20 bg-black">
-        {/* Header */}
         <div className="bg-gradient-to-r from-red-600 to-red-800 text-white p-6">
           <Button 
             variant="ghost" 
@@ -608,103 +758,83 @@ export default function FitNowApp() {
           >
             ← Voltar
           </Button>
-          <div className="flex items-center justify-between">
-            <div>
-              <h1 className="text-2xl font-bold">Plano Alimentar</h1>
-              <p className="text-gray-200">Segunda-feira</p>
-            </div>
-            <div className="text-right">
-              <div className="text-3xl font-bold">2.050</div>
-              <div className="text-sm text-gray-200">kcal/dia</div>
-            </div>
-          </div>
+          <h1 className="text-2xl font-bold">Minha Dieta</h1>
+          <p className="text-gray-200 text-sm">Plano alimentar personalizado</p>
         </div>
 
         <div className="p-6 space-y-6">
-          {/* Refeições */}
-          <div className="space-y-3">
-            {dietPlan.map((meal, idx) => (
-              <Card key={idx} className="p-4 bg-gray-900 border-gray-800">
-                <div className="flex items-start justify-between mb-2">
-                  <div>
-                    <h3 className="font-semibold text-lg text-white">{meal.meal}</h3>
-                    <p className="text-gray-400 mt-1">{meal.food}</p>
-                  </div>
-                  <Badge variant="secondary" className="bg-red-600 text-white">{meal.calories}</Badge>
-                </div>
-                {isPremium && (
-                  <Button variant="ghost" size="sm" className="mt-2 text-red-600 hover:text-red-500">
-                    <RefreshCw className="w-4 h-4 mr-2" />
-                    Substituir alimento
-                  </Button>
-                )}
-              </Card>
-            ))}
-          </div>
-
-          {/* Lista de Compras */}
-          {isPremium ? (
-            <Card className="p-6 bg-gradient-to-br from-red-600 to-red-800 text-white border-0">
-              <div className="flex items-center gap-3 mb-4">
-                <ShoppingCart className="w-6 h-6" />
-                <h3 className="text-xl font-bold">Lista de Compras</h3>
-              </div>
-              <p className="text-gray-200 mb-4">
-                Lista semanal gerada automaticamente com base no seu plano
-              </p>
-              <Button className="w-full bg-white text-red-600 hover:bg-gray-100">
-                Ver Lista Completa
-              </Button>
-            </Card>
-          ) : (
-            <Card className="p-6 bg-gradient-to-r from-red-600 to-red-800 border-0">
-              <div className="flex items-start gap-4">
-                <Crown className="w-8 h-8 text-white flex-shrink-0" />
-                <div className="flex-1">
-                  <h3 className="font-bold text-white mb-1">
-                    Desbloqueie substituições e lista de compras
-                  </h3>
-                  <p className="text-gray-200 text-sm mb-3">
-                    Personalize sua dieta e tenha lista automática
-                  </p>
-                  <Button 
-                    onClick={() => setCurrentScreen("premium-upsell")}
-                    className="bg-white text-red-600 hover:bg-gray-100"
-                  >
-                    Assinar Premium
-                  </Button>
-                </div>
-              </div>
-            </Card>
-          )}
-
-          {/* Macros */}
           <Card className="p-6 bg-gray-900 border-gray-800">
-            <h3 className="font-semibold mb-4 text-white">Distribuição de Macros</h3>
-            <div className="space-y-4">
-              <div>
-                <div className="flex justify-between mb-2">
-                  <span className="text-sm font-medium text-gray-300">Proteínas</span>
-                  <span className="text-sm text-gray-400">150g (30%)</span>
-                </div>
-                <Progress value={30} className="h-2" />
-              </div>
-              <div>
-                <div className="flex justify-between mb-2">
-                  <span className="text-sm font-medium text-gray-300">Carboidratos</span>
-                  <span className="text-sm text-gray-400">250g (50%)</span>
-                </div>
-                <Progress value={50} className="h-2" />
-              </div>
-              <div>
-                <div className="flex justify-between mb-2">
-                  <span className="text-sm font-medium text-gray-300">Gorduras</span>
-                  <span className="text-sm text-gray-400">45g (20%)</span>
-                </div>
-                <Progress value={20} className="h-2" />
-              </div>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-white font-bold text-lg">Café da Manhã</h3>
+              <Badge className="bg-red-600">450 kcal</Badge>
+            </div>
+            <div className="space-y-2 text-gray-300">
+              <p>• 2 ovos mexidos</p>
+              <p>• 2 fatias de pão integral</p>
+              <p>• 1 banana</p>
+              <p>• Café com leite</p>
             </div>
           </Card>
+
+          <Card className="p-6 bg-gray-900 border-gray-800">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-white font-bold text-lg">Almoço</h3>
+              <Badge className="bg-red-600">650 kcal</Badge>
+            </div>
+            <div className="space-y-2 text-gray-300">
+              <p>• 150g de frango grelhado</p>
+              <p>• 1 xícara de arroz integral</p>
+              <p>• Salada verde</p>
+              <p>• 1 colher de azeite</p>
+            </div>
+          </Card>
+
+          <Card className="p-6 bg-gray-900 border-gray-800">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-white font-bold text-lg">Jantar</h3>
+              <Badge className="bg-red-600">550 kcal</Badge>
+            </div>
+            <div className="space-y-2 text-gray-300">
+              <p>• 150g de peixe assado</p>
+              <p>• Batata doce</p>
+              <p>• Legumes no vapor</p>
+              <p>• Salada</p>
+            </div>
+          </Card>
+        </div>
+
+        {/* Bottom Navigation */}
+        <div className="fixed bottom-0 left-0 right-0 bg-gray-900 border-t border-gray-800 p-4">
+          <div className="flex justify-around">
+            <Button 
+              variant="ghost" 
+              className="flex-col h-auto text-gray-400"
+              onClick={() => setCurrentScreen("home")}
+            >
+              <Home className="w-6 h-6 mb-1" />
+              <span className="text-xs">Início</span>
+            </Button>
+            <Button 
+              variant="ghost" 
+              className="flex-col h-auto text-gray-400"
+              onClick={() => setCurrentScreen("workout")}
+            >
+              <Dumbbell className="w-6 h-6 mb-1" />
+              <span className="text-xs">Treino</span>
+            </Button>
+            <Button variant="ghost" className="flex-col h-auto text-red-600">
+              <Apple className="w-6 h-6 mb-1" />
+              <span className="text-xs">Dieta</span>
+            </Button>
+            <Button 
+              variant="ghost" 
+              className="flex-col h-auto text-gray-400"
+              onClick={() => setCurrentScreen("progress")}
+            >
+              <TrendingUp className="w-6 h-6 mb-1" />
+              <span className="text-xs">Progresso</span>
+            </Button>
+          </div>
         </div>
       </div>
     );
@@ -714,7 +844,6 @@ export default function FitNowApp() {
   if (currentScreen === "progress") {
     return (
       <div className="min-h-screen pb-20 bg-black">
-        {/* Header */}
         <div className="bg-gradient-to-r from-red-600 to-red-800 text-white p-6">
           <Button 
             variant="ghost" 
@@ -723,107 +852,98 @@ export default function FitNowApp() {
           >
             ← Voltar
           </Button>
-          <h1 className="text-2xl font-bold">Seu Progresso</h1>
-          <p className="text-gray-200">Acompanhe sua evolução</p>
+          <h1 className="text-2xl font-bold">Meu Progresso</h1>
+          <p className="text-gray-200 text-sm">Acompanhe sua evolução</p>
         </div>
 
         <div className="p-6 space-y-6">
-          {/* Estatísticas Rápidas */}
-          <div className="grid grid-cols-2 gap-4">
-            <Card className="p-4 text-center bg-gray-900 border-gray-800">
-              <div className="text-3xl font-bold text-red-600">28</div>
-              <div className="text-sm text-gray-400 mt-1">Treinos completos</div>
-            </Card>
-            <Card className="p-4 text-center bg-gray-900 border-gray-800">
-              <div className="text-3xl font-bold text-red-600">7</div>
-              <div className="text-sm text-gray-400 mt-1">Dias seguidos</div>
-            </Card>
-            <Card className="p-4 text-center bg-gray-900 border-gray-800">
-              <div className="text-3xl font-bold text-red-600">-3kg</div>
-              <div className="text-sm text-gray-400 mt-1">Peso perdido</div>
-            </Card>
-            <Card className="p-4 text-center bg-gray-900 border-gray-800">
-              <div className="text-3xl font-bold text-red-600">42h</div>
-              <div className="text-sm text-gray-400 mt-1">Tempo total</div>
-            </Card>
-          </div>
-
-          {/* Gráfico de Peso */}
           <Card className="p-6 bg-gray-900 border-gray-800">
-            <h3 className="font-semibold mb-4 text-white">Evolução de Peso</h3>
-            <div className="h-48 bg-gradient-to-t from-red-950 to-transparent rounded-lg flex items-end justify-around p-4">
-              {[75, 74, 73.5, 73, 72.5, 72, 71.5].map((weight, idx) => (
-                <div key={idx} className="flex flex-col items-center gap-2">
-                  <div 
-                    className="w-8 bg-gradient-to-t from-red-600 to-red-800 rounded-t"
-                    style={{ height: `${(weight / 75) * 100}%` }}
-                  />
-                  <span className="text-xs text-gray-400">S{idx + 1}</span>
+            <h3 className="text-white font-bold mb-4">Estatísticas da Semana</h3>
+            <div className="space-y-4">
+              <div>
+                <div className="flex justify-between text-sm mb-2">
+                  <span className="text-gray-400">Treinos Completos</span>
+                  <span className="text-white font-semibold">3/5</span>
                 </div>
-              ))}
+                <Progress value={60} className="h-2" />
+              </div>
+              <div>
+                <div className="flex justify-between text-sm mb-2">
+                  <span className="text-gray-400">Dieta Seguida</span>
+                  <span className="text-white font-semibold">5/7 dias</span>
+                </div>
+                <Progress value={71} className="h-2" />
+              </div>
             </div>
           </Card>
 
-          {/* Histórico de Treinos */}
-          <div>
-            <h3 className="font-semibold mb-3 text-white">Histórico Recente</h3>
-            <div className="space-y-2">
-              {[
-                { date: "Hoje", workout: "Treino em Casa", duration: "35 min" },
-                { date: "Ontem", workout: "Treino na Academia", duration: "45 min" },
-                { date: "2 dias atrás", workout: "Treino em Casa", duration: "30 min" },
-              ].map((item, idx) => (
-                <Card key={idx} className="p-4 bg-gray-900 border-gray-800">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 bg-gradient-to-br from-red-600 to-red-800 rounded-full flex items-center justify-center">
-                        <Check className="w-5 h-5 text-white" />
-                      </div>
-                      <div>
-                        <h4 className="font-semibold text-white">{item.workout}</h4>
-                        <p className="text-sm text-gray-400">{item.date}</p>
-                      </div>
-                    </div>
-                    <Badge variant="secondary" className="bg-red-600 text-white">{item.duration}</Badge>
-                  </div>
-                </Card>
-              ))}
-            </div>
-          </div>
-
-          {/* Premium Upsell */}
-          {!isPremium && (
-            <Card className="p-6 bg-gradient-to-r from-red-600 to-red-800 border-0">
-              <div className="flex items-start gap-4">
-                <Crown className="w-8 h-8 text-white flex-shrink-0" />
-                <div className="flex-1">
-                  <h3 className="font-bold text-white mb-1">
-                    Acompanhe medidas e fotos de progresso
-                  </h3>
-                  <p className="text-gray-200 text-sm mb-3">
-                    Registre peso, medidas corporais e compare fotos
-                  </p>
-                  <Button 
-                    onClick={() => setCurrentScreen("premium-upsell")}
-                    className="bg-white text-red-600 hover:bg-gray-100"
-                  >
-                    Desbloquear Premium
-                  </Button>
+          <Card className="p-6 bg-gray-900 border-gray-800">
+            <h3 className="text-white font-bold mb-4">Conquistas</h3>
+            <div className="grid grid-cols-3 gap-4">
+              <div className="text-center">
+                <div className="w-16 h-16 mx-auto bg-red-600 rounded-full flex items-center justify-center mb-2">
+                  <Award className="w-8 h-8 text-white" />
                 </div>
+                <p className="text-gray-400 text-xs">1ª Semana</p>
               </div>
-            </Card>
-          )}
+              <div className="text-center opacity-50">
+                <div className="w-16 h-16 mx-auto bg-gray-700 rounded-full flex items-center justify-center mb-2">
+                  <Lock className="w-8 h-8 text-gray-500" />
+                </div>
+                <p className="text-gray-500 text-xs">1º Mês</p>
+              </div>
+              <div className="text-center opacity-50">
+                <div className="w-16 h-16 mx-auto bg-gray-700 rounded-full flex items-center justify-center mb-2">
+                  <Lock className="w-8 h-8 text-gray-500" />
+                </div>
+                <p className="text-gray-500 text-xs">3 Meses</p>
+              </div>
+            </div>
+          </Card>
+        </div>
+
+        {/* Bottom Navigation */}
+        <div className="fixed bottom-0 left-0 right-0 bg-gray-900 border-t border-gray-800 p-4">
+          <div className="flex justify-around">
+            <Button 
+              variant="ghost" 
+              className="flex-col h-auto text-gray-400"
+              onClick={() => setCurrentScreen("home")}
+            >
+              <Home className="w-6 h-6 mb-1" />
+              <span className="text-xs">Início</span>
+            </Button>
+            <Button 
+              variant="ghost" 
+              className="flex-col h-auto text-gray-400"
+              onClick={() => isPremium ? setCurrentScreen("workout") : setCurrentScreen("premium-upsell")}
+            >
+              <Dumbbell className="w-6 h-6 mb-1" />
+              <span className="text-xs">Treino</span>
+            </Button>
+            <Button 
+              variant="ghost" 
+              className="flex-col h-auto text-gray-400"
+              onClick={() => isPremium ? setCurrentScreen("diet") : setCurrentScreen("premium-upsell")}
+            >
+              <Apple className="w-6 h-6 mb-1" />
+              <span className="text-xs">Dieta</span>
+            </Button>
+            <Button variant="ghost" className="flex-col h-auto text-red-600">
+              <TrendingUp className="w-6 h-6 mb-1" />
+              <span className="text-xs">Progresso</span>
+            </Button>
+          </div>
         </div>
       </div>
     );
   }
 
-  // Tela de Upsell Premium
+  // Tela Premium Upsell
   if (currentScreen === "premium-upsell") {
     return (
-      <div className="min-h-screen bg-black">
-        {/* Header */}
-        <div className="bg-gradient-to-br from-red-600 via-red-700 to-red-900 text-white p-6 pb-12">
+      <div className="min-h-screen pb-20 bg-black">
+        <div className="bg-gradient-to-r from-red-600 to-red-800 text-white p-6">
           <Button 
             variant="ghost" 
             className="text-white mb-4"
@@ -832,115 +952,76 @@ export default function FitNowApp() {
             ← Voltar
           </Button>
           <div className="text-center space-y-2">
-            <Crown className="w-16 h-16 mx-auto" />
-            <h1 className="text-3xl font-bold">FitNow Premium</h1>
-            <p className="text-gray-200">
-              Transforme seu corpo com planos 100% personalizados
-            </p>
+            <Crown className="w-16 h-16 mx-auto text-yellow-400" />
+            <h1 className="text-3xl font-bold">Fitneer Pro</h1>
+            <p className="text-gray-200">Desbloqueie todo o potencial</p>
           </div>
         </div>
 
-        <div className="p-6 -mt-6 space-y-6">
-          {/* Planos */}
-          <div className="space-y-4">
-            <Card className="p-6 border-2 border-red-600 bg-gray-900">
-              <div className="flex items-center justify-between mb-4">
-                <div>
-                  <h3 className="text-xl font-bold text-white">Plano Anual</h3>
-                  <p className="text-sm text-gray-400">Economize 40%</p>
-                </div>
-                <Badge className="bg-red-600 text-white">Melhor valor</Badge>
-              </div>
-              <div className="mb-4">
-                <div className="flex items-baseline gap-2">
-                  <span className="text-4xl font-bold text-white">R$ 19,90</span>
-                  <span className="text-gray-400">/mês</span>
-                </div>
-                <p className="text-sm text-gray-400">R$ 238,80 cobrado anualmente</p>
-              </div>
-              <Button 
-                onClick={() => {
-                  setIsPremium(true);
-                  setCurrentScreen("premium-form");
-                }}
-                className="w-full h-12 bg-gradient-to-r from-red-600 to-red-800 hover:from-red-700 hover:to-red-900"
-              >
-                Começar Agora
-              </Button>
-            </Card>
-
-            <Card className="p-6 bg-gray-900 border-gray-800">
-              <div className="flex items-center justify-between mb-4">
-                <div>
-                  <h3 className="text-xl font-bold text-white">Plano Mensal</h3>
-                  <p className="text-sm text-gray-400">Cancele quando quiser</p>
-                </div>
-              </div>
-              <div className="mb-4">
-                <div className="flex items-baseline gap-2">
-                  <span className="text-4xl font-bold text-white">R$ 32,90</span>
-                  <span className="text-gray-400">/mês</span>
-                </div>
-              </div>
-              <Button 
-                onClick={() => {
-                  setIsPremium(true);
-                  setCurrentScreen("premium-form");
-                }}
-                variant="outline"
-                className="w-full h-12 bg-gray-800 border-gray-700 text-white hover:bg-gray-700"
-              >
-                Assinar Mensal
-              </Button>
-            </Card>
-          </div>
-
-          {/* Benefícios */}
-          <div>
-            <h3 className="font-semibold mb-4 text-white">O que você ganha:</h3>
+        <div className="p-6 space-y-6">
+          <Card className="p-6 bg-gray-900 border-gray-800">
+            <h3 className="text-white font-bold text-xl mb-4">Recursos Premium</h3>
             <div className="space-y-3">
-              {[
-                "Treinos 100% personalizados para seu objetivo",
-                "Dieta adaptada às suas preferências e restrições",
-                "Substituições automáticas de alimentos",
-                "Lista de compras semanal gerada automaticamente",
-                "Acompanhamento completo de progresso",
-                "Registro de peso, medidas e fotos",
-                "Sem anúncios",
-                "Suporte prioritário",
-              ].map((benefit, idx) => (
-                <div key={idx} className="flex items-start gap-3">
-                  <Check className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
-                  <span className="text-gray-300">{benefit}</span>
+              <div className="flex items-start gap-3">
+                <Check className="w-5 h-5 text-green-500 flex-shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-white font-semibold">Treinos Personalizados</p>
+                  <p className="text-gray-400 text-sm">Baseados nos seus objetivos e local</p>
                 </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Garantia */}
-          <Card className="p-4 bg-red-950 border-red-900">
-            <div className="flex items-center gap-3">
-              <div className="w-12 h-12 bg-red-600 rounded-full flex items-center justify-center flex-shrink-0">
-                <Check className="w-6 h-6 text-white" />
               </div>
-              <div>
-                <h4 className="font-semibold text-white">Garantia de 7 dias</h4>
-                <p className="text-sm text-gray-300">
-                  Não gostou? Devolvemos 100% do seu dinheiro
-                </p>
+              <div className="flex items-start gap-3">
+                <Check className="w-5 h-5 text-green-500 flex-shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-white font-semibold">Dieta Personalizada</p>
+                  <p className="text-gray-400 text-sm">Plano alimentar completo e balanceado</p>
+                </div>
+              </div>
+              <div className="flex items-start gap-3">
+                <Check className="w-5 h-5 text-green-500 flex-shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-white font-semibold">Acompanhamento de Progresso</p>
+                  <p className="text-gray-400 text-sm">Monitore sua evolução diariamente</p>
+                </div>
+              </div>
+              <div className="flex items-start gap-3">
+                <Check className="w-5 h-5 text-green-500 flex-shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-white font-semibold">Timer de Descanso</p>
+                  <p className="text-gray-400 text-sm">Controle perfeito entre séries</p>
+                </div>
               </div>
             </div>
           </Card>
+
+          <Button 
+            onClick={handleUpgradeToPro}
+            className="w-full h-14 bg-gradient-to-r from-red-600 to-red-800 hover:from-red-700 hover:to-red-900 text-lg"
+          >
+            <Crown className="w-5 h-5 mr-2" />
+            Ativar Plano Pro
+          </Button>
+
+          <p className="text-center text-gray-400 text-sm">
+            Cancele quando quiser. Sem compromisso.
+          </p>
         </div>
       </div>
     );
   }
 
-  // Formulário Premium
+  // Tela Premium Form
   if (currentScreen === "premium-form") {
+    const [formGoals, setFormGoals] = useState({
+      goal_type: userGoals?.goal_type || 'lose',
+      workout_location: userGoals?.workout_location || [],
+      time_available: userGoals?.time_available || '30-45',
+      equipment: userGoals?.equipment || [],
+      diet_preferences: userGoals?.diet_preferences || [],
+      restrictions: userGoals?.restrictions || ''
+    });
+
     return (
       <div className="min-h-screen pb-20 bg-black">
-        {/* Header */}
         <div className="bg-gradient-to-r from-red-600 to-red-800 text-white p-6">
           <Button 
             variant="ghost" 
@@ -949,170 +1030,87 @@ export default function FitNowApp() {
           >
             ← Voltar
           </Button>
-          <h1 className="text-2xl font-bold">Personalização</h1>
-          <p className="text-gray-200">Vamos criar seu plano ideal</p>
+          <h1 className="text-2xl font-bold">Configure seu Plano</h1>
+          <p className="text-gray-200 text-sm">Personalize treinos e dieta</p>
         </div>
 
-        <div className="p-6 space-y-8">
-          {/* Objetivo */}
-          <div className="space-y-4">
-            <div>
-              <h3 className="font-semibold text-lg mb-1 text-white">Qual seu objetivo?</h3>
-              <p className="text-sm text-gray-400">Escolha o que melhor descreve sua meta</p>
-            </div>
-            <RadioGroup defaultValue="lose">
+        <div className="p-6 space-y-6">
+          <Card className="p-6 bg-gray-900 border-gray-800">
+            <Label className="text-white font-semibold mb-3 block">Seu Objetivo</Label>
+            <RadioGroup value={formGoals.goal_type} onValueChange={(value) => setFormGoals({...formGoals, goal_type: value})}>
               <div className="space-y-3">
-                {[
-                  { value: "lose", label: "Emagrecer", icon: "🔥" },
-                  { value: "gain", label: "Ganhar massa muscular", icon: "💪" },
-                  { value: "maintain", label: "Manter o peso", icon: "⚖️" },
-                  { value: "tone", label: "Definir o corpo", icon: "✨" },
-                ].map((option) => (
-                  <Card key={option.value} className="p-4 cursor-pointer hover:border-red-600 transition-colors bg-gray-900 border-gray-800">
-                    <div className="flex items-center gap-3">
-                      <RadioGroupItem value={option.value} id={option.value} />
-                      <Label htmlFor={option.value} className="flex items-center gap-3 cursor-pointer flex-1 text-white">
-                        <span className="text-2xl">{option.icon}</span>
-                        <span className="font-medium">{option.label}</span>
-                      </Label>
-                    </div>
-                  </Card>
-                ))}
+                <div className="flex items-center space-x-2">
+                  <RadioGroupItem value="lose" id="lose" />
+                  <Label htmlFor="lose" className="text-gray-300">Perder Peso</Label>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <RadioGroupItem value="gain" id="gain" />
+                  <Label htmlFor="gain" className="text-gray-300">Ganhar Massa</Label>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <RadioGroupItem value="maintain" id="maintain" />
+                  <Label htmlFor="maintain" className="text-gray-300">Manter Peso</Label>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <RadioGroupItem value="tone" id="tone" />
+                  <Label htmlFor="tone" className="text-gray-300">Tonificar</Label>
+                </div>
               </div>
             </RadioGroup>
-          </div>
+          </Card>
 
-          {/* Local de Treino */}
-          <div className="space-y-4">
-            <div>
-              <h3 className="font-semibold text-lg mb-1 text-white">Onde vai treinar?</h3>
-              <p className="text-sm text-gray-400">Pode escolher mais de uma opção</p>
-            </div>
+          <Card className="p-6 bg-gray-900 border-gray-800">
+            <Label className="text-white font-semibold mb-3 block">Local de Treino</Label>
             <div className="space-y-3">
-              {[
-                { id: "home", label: "Em casa", icon: <Home className="w-5 h-5" /> },
-                { id: "gym", label: "Na academia", icon: <Dumbbell className="w-5 h-5" /> },
-              ].map((option) => (
-                <Card key={option.id} className="p-4 bg-gray-900 border-gray-800">
-                  <div className="flex items-center gap-3">
-                    <Checkbox id={option.id} />
-                    <Label htmlFor={option.id} className="flex items-center gap-3 cursor-pointer flex-1 text-white">
-                      {option.icon}
-                      <span className="font-medium">{option.label}</span>
-                    </Label>
-                  </div>
-                </Card>
-              ))}
-            </div>
-          </div>
-
-          {/* Tempo Disponível */}
-          <div className="space-y-4">
-            <div>
-              <h3 className="font-semibold text-lg mb-1 text-white">Tempo disponível por dia</h3>
-              <p className="text-sm text-gray-400">Quanto tempo você pode dedicar?</p>
-            </div>
-            <RadioGroup defaultValue="30-45">
-              <div className="grid grid-cols-2 gap-3">
-                {[
-                  { value: "15-30", label: "15-30 min" },
-                  { value: "30-45", label: "30-45 min" },
-                  { value: "45-60", label: "45-60 min" },
-                  { value: "60+", label: "Mais de 1h" },
-                ].map((option) => (
-                  <Card key={option.value} className="p-4 cursor-pointer hover:border-red-600 transition-colors bg-gray-900 border-gray-800">
-                    <div className="flex items-center gap-2">
-                      <RadioGroupItem value={option.value} id={`time-${option.value}`} />
-                      <Label htmlFor={`time-${option.value}`} className="cursor-pointer font-medium text-white">
-                        {option.label}
-                      </Label>
-                    </div>
-                  </Card>
-                ))}
+              <div className="flex items-center space-x-2">
+                <Checkbox 
+                  id="home" 
+                  checked={formGoals.workout_location.includes('home')}
+                  onCheckedChange={(checked) => {
+                    if (checked) {
+                      setFormGoals({...formGoals, workout_location: [...formGoals.workout_location, 'home']});
+                    } else {
+                      setFormGoals({...formGoals, workout_location: formGoals.workout_location.filter(l => l !== 'home')});
+                    }
+                  }}
+                />
+                <Label htmlFor="home" className="text-gray-300">Casa</Label>
               </div>
-            </RadioGroup>
-          </div>
+              <div className="flex items-center space-x-2">
+                <Checkbox 
+                  id="gym" 
+                  checked={formGoals.workout_location.includes('gym')}
+                  onCheckedChange={(checked) => {
+                    if (checked) {
+                      setFormGoals({...formGoals, workout_location: [...formGoals.workout_location, 'gym']});
+                    } else {
+                      setFormGoals({...formGoals, workout_location: formGoals.workout_location.filter(l => l !== 'gym')});
+                    }
+                  }}
+                />
+                <Label htmlFor="gym" className="text-gray-300">Academia</Label>
+              </div>
+            </div>
+          </Card>
 
-          {/* Equipamentos */}
-          <div className="space-y-4">
-            <div>
-              <h3 className="font-semibold text-lg mb-1 text-white">Equipamentos disponíveis</h3>
-              <p className="text-sm text-gray-400">Marque o que você tem acesso</p>
-            </div>
-            <div className="space-y-3">
-              {[
-                "Halteres",
-                "Barra e anilhas",
-                "Elásticos de resistência",
-                "Colchonete",
-                "Nenhum equipamento",
-              ].map((equipment) => (
-                <Card key={equipment} className="p-4 bg-gray-900 border-gray-800">
-                  <div className="flex items-center gap-3">
-                    <Checkbox id={equipment} />
-                    <Label htmlFor={equipment} className="cursor-pointer flex-1 text-white">
-                      {equipment}
-                    </Label>
-                  </div>
-                </Card>
-              ))}
-            </div>
-          </div>
-
-          {/* Preferências Alimentares */}
-          <div className="space-y-4">
-            <div>
-              <h3 className="font-semibold text-lg mb-1 text-white">Preferências alimentares</h3>
-              <p className="text-sm text-gray-400">Como você prefere se alimentar?</p>
-            </div>
-            <div className="space-y-3">
-              {[
-                { id: "vegetarian", label: "Vegetariano/Vegano" },
-                { id: "practical", label: "Refeições práticas e rápidas" },
-                { id: "budget", label: "Opções de baixo custo" },
-                { id: "no-lactose", label: "Sem lactose" },
-                { id: "no-gluten", label: "Sem glúten" },
-              ].map((pref) => (
-                <Card key={pref.id} className="p-4 bg-gray-900 border-gray-800">
-                  <div className="flex items-center gap-3">
-                    <Checkbox id={pref.id} />
-                    <Label htmlFor={pref.id} className="cursor-pointer flex-1 text-white">
-                      {pref.label}
-                    </Label>
-                  </div>
-                </Card>
-              ))}
-            </div>
-          </div>
-
-          {/* Restrições */}
-          <div className="space-y-4">
-            <div>
-              <h3 className="font-semibold text-lg mb-1 text-white">Restrições físicas</h3>
-              <p className="text-sm text-gray-400">Opcional - nos ajuda a adaptar os exercícios</p>
-            </div>
-            <Input 
-              placeholder="Ex: problema no joelho, dor nas costas..."
-              className="h-12 bg-gray-900 border-gray-800 text-white"
-            />
-          </div>
-
-          {/* Botão Gerar Plano */}
           <Button 
-            onClick={() => setCurrentScreen("home")}
-            className="w-full h-14 text-lg bg-gradient-to-r from-red-600 to-red-800 hover:from-red-700 hover:to-red-900"
+            onClick={() => handleSaveGoals(formGoals)}
+            className="w-full h-12 bg-gradient-to-r from-red-600 to-red-800 hover:from-red-700 hover:to-red-900"
           >
-            <Zap className="w-5 h-5 mr-2" />
-            Gerar Meu Plano Personalizado
+            Salvar e Gerar Plano
           </Button>
-
-          <p className="text-center text-sm text-gray-400">
-            Seu plano será gerado em segundos e você pode ajustá-lo a qualquer momento
-          </p>
         </div>
       </div>
     );
   }
 
-  return null;
+  // Fallback - não deve chegar aqui
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-black">
+      <div className="text-center space-y-4">
+        <Dumbbell className="w-16 h-16 text-red-600 mx-auto animate-pulse" />
+        <p className="text-white text-lg">Carregando...</p>
+      </div>
+    </div>
+  );
 }
