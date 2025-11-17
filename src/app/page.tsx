@@ -53,7 +53,7 @@ type WorkoutLocation = "home" | "gym" | null;
 type DayOfWeek = "monday" | "tuesday" | "wednesday" | "thursday" | "friday";
 
 export default function FitneerApp() {
-  // TODOS OS ESTADOS DECLARADOS PRIMEIRO
+  // Estados principais
   const [currentScreen, setCurrentScreen] = useState<Screen>("welcome");
   const [currentUser, setCurrentUser] = useState<UserType | null>(null);
   const [workoutLocation, setWorkoutLocation] = useState<WorkoutLocation>(null);
@@ -78,7 +78,6 @@ export default function FitneerApp() {
 
   const isPremium = currentUser?.plan_type === 'pro';
 
-  // AGORA SIM OS EFFECTS (DEPOIS DE TODOS OS ESTADOS)
   // Effect para carregar usuários quando estiver na tela admin
   useEffect(() => {
     if (currentScreen === "admin") {
@@ -645,8 +644,21 @@ export default function FitneerApp() {
   // Tela de Treino
   if (currentScreen === "workout") {
     if (!isPremium) {
-      setCurrentScreen("premium-upsell");
-      return null;
+      return (
+        <div className="min-h-screen flex items-center justify-center bg-black p-6">
+          <Card className="p-8 bg-gray-900 border-gray-800 text-center max-w-md">
+            <Lock className="w-16 h-16 text-gray-600 mx-auto mb-4" />
+            <h2 className="text-2xl font-bold text-white mb-2">Conteúdo Premium</h2>
+            <p className="text-gray-400 mb-6">Faça upgrade para acessar treinos personalizados</p>
+            <Button 
+              onClick={() => setCurrentScreen("premium-upsell")}
+              className="w-full bg-red-600 hover:bg-red-700"
+            >
+              Ver Planos
+            </Button>
+          </Card>
+        </div>
+      );
     }
 
     return (
@@ -744,8 +756,21 @@ export default function FitneerApp() {
   // Tela de Dieta
   if (currentScreen === "diet") {
     if (!isPremium) {
-      setCurrentScreen("premium-upsell");
-      return null;
+      return (
+        <div className="min-h-screen flex items-center justify-center bg-black p-6">
+          <Card className="p-8 bg-gray-900 border-gray-800 text-center max-w-md">
+            <Lock className="w-16 h-16 text-gray-600 mx-auto mb-4" />
+            <h2 className="text-2xl font-bold text-white mb-2">Conteúdo Premium</h2>
+            <p className="text-gray-400 mb-6">Faça upgrade para acessar dietas personalizadas</p>
+            <Button 
+              onClick={() => setCurrentScreen("premium-upsell")}
+              className="w-full bg-red-600 hover:bg-red-700"
+            >
+              Ver Planos
+            </Button>
+          </Card>
+        </div>
+      );
     }
 
     return (
@@ -1104,7 +1129,7 @@ export default function FitneerApp() {
     );
   }
 
-  // Fallback - não deve chegar aqui
+  // Fallback - Loading
   return (
     <div className="min-h-screen flex items-center justify-center bg-black">
       <div className="text-center space-y-4">

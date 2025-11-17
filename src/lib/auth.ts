@@ -71,24 +71,38 @@ export async function updateUserPlan(userId: string, planType: 'normal' | 'pro')
 
 export async function saveUserGoals(userId: string, goals: any): Promise<{ success: boolean; error: string | null }> {
   try {
-    // Deletar objetivos antigos
-    await supabase
+    // Verificar se já existem objetivos para este usuário
+    const { data: existingGoals } = await supabase
       .from('user_goals')
-      .delete()
-      .eq('user_id', userId);
+      .select('id')
+      .eq('user_id', userId)
+      .single();
 
-    // Inserir novos objetivos
-    const { error } = await supabase
-      .from('user_goals')
-      .insert([
-        {
-          user_id: userId,
+    if (existingGoals) {
+      // Atualizar objetivos existentes
+      const { error } = await supabase
+        .from('user_goals')
+        .update({
           ...goals,
           updated_at: new Date().toISOString()
-        }
-      ]);
+        })
+        .eq('user_id', userId);
 
-    if (error) throw error;
+      if (error) throw error;
+    } else {
+      // Inserir novos objetivos
+      const { error } = await supabase
+        .from('user_goals')
+        .insert([
+          {
+            user_id: userId,
+            ...goals,
+            updated_at: new Date().toISOString()
+          }
+        ]);
+
+      if (error) throw error;
+    }
 
     return { success: true, error: null };
   } catch (error: any) {
